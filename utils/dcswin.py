@@ -591,7 +591,7 @@ class SwinTransformer(nn.Module):
     """
 
     def __init__(self,
-                 pretrain_img_size=224,
+                 pretrain_img_size=512,
                  patch_size=4,
                  in_chans=3,
                  embed_dim=128,
@@ -858,6 +858,41 @@ class DCFAM(nn.Module):
         return out1, out2
 
 
+# class Decoder(nn.Module):
+#     def __init__(self,
+#                  encoder_channels=(96, 192, 384, 768),
+#                  dropout=0.05,
+#                  atrous_rates=(6, 12),
+#                  num_classes=6):
+#         super(Decoder, self).__init__()
+#         self.dcfam = DCFAM(encoder_channels, atrous_rates)
+#         self.dropout = nn.Dropout2d(p=dropout, inplace=True)
+#         self.segmentation_head = nn.Sequential(
+#             ConvBNReLU(encoder_channels[0], encoder_channels[0]),
+#             Conv(encoder_channels[0], num_classes, kernel_size=1),
+#             nn.UpsamplingBilinear2d(scale_factor=4))
+#         self.up = nn.Sequential(
+#             ConvBNReLU(encoder_channels[1], encoder_channels[0]),
+#             nn.UpsamplingNearest2d(scale_factor=2)
+#         )
+
+#         self.init_weight()
+
+#     def forward(self, x1, x2, x3, x4):
+#         out1, out2 = self.dcfam(x1, x2, x3, x4)
+#         x = out1 + self.up(out2)
+#         x = self.dropout(x)
+#         x = self.segmentation_head(x)
+
+#         return x
+
+#     def init_weight(self):
+#         for m in self.children():
+#             if isinstance(m, nn.Conv2d):
+#                 nn.init.kaiming_normal_(m.weight, a=1)
+#                 if m.bias is not None:
+#                     nn.init.constant_(m.bias, 0)
+
 class Decoder(nn.Module):
     def __init__(self,
                  encoder_channels=(96, 192, 384, 768),
@@ -867,8 +902,9 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.dcfam = DCFAM(encoder_channels, atrous_rates)
         self.dropout = nn.Dropout2d(p=dropout, inplace=True)
+        # Modify the number of input channels in the segmentation_head
         self.segmentation_head = nn.Sequential(
-            ConvBNReLU(encoder_channels[0], encoder_channels[0]),
+            ConvBNReLU(1024, encoder_channels[0]),  # Change input channels from 768 to 1024
             Conv(encoder_channels[0], num_classes, kernel_size=1),
             nn.UpsamplingBilinear2d(scale_factor=4))
         self.up = nn.Sequential(
@@ -894,9 +930,29 @@ class Decoder(nn.Module):
                     nn.init.constant_(m.bias, 0)
 
 
+
+# class DCSwin(nn.Module):
+#     def __init__(self,
+#                  encoder_channels=(96, 192, 384, 768, 1024),
+#                  dropout=0.05,
+#                  atrous_rates=(6, 12),
+#                  num_classes=6,
+#                  embed_dim=128,
+#                  depths=(2, 2, 18, 2),
+#                  num_heads=(4, 8, 16, 32),
+#                  frozen_stages=2):
+#         super(DCSwin, self).__init__()
+#         self.backbone = SwinTransformer(embed_dim=embed_dim, depths=depths, num_heads=num_heads, frozen_stages=frozen_stages)
+#         self.decoder = Decoder(encoder_channels, dropout, atrous_rates, num_classes)
+
+#     def forward(self, x):
+#         x1, x2, x3, x4 = self.backbone(x)
+#         x = self.decoder(x1, x2, x3, x4)
+#         return x
+
 class DCSwin(nn.Module):
     def __init__(self,
-                 encoder_channels=(96, 192, 384, 768),
+                 encoder_channels=(96, 192, 384, 768, 1024),
                  dropout=0.05,
                  atrous_rates=(6, 12),
                  num_classes=6,
@@ -906,12 +962,14 @@ class DCSwin(nn.Module):
                  frozen_stages=2):
         super(DCSwin, self).__init__()
         self.backbone = SwinTransformer(embed_dim=embed_dim, depths=depths, num_heads=num_heads, frozen_stages=frozen_stages)
+        # Modify the number of input channels to match your input data
         self.decoder = Decoder(encoder_channels, dropout, atrous_rates, num_classes)
 
     def forward(self, x):
         x1, x2, x3, x4 = self.backbone(x)
         x = self.decoder(x1, x2, x3, x4)
         return x
+
 
 
 def dcswin_base(pretrained=True, num_classes=4, weight_path='pretrain_weights/stseg_base.pth'):
